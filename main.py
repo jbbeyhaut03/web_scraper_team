@@ -1,5 +1,7 @@
 import os
 import asyncio
+import sqlite3
+import json
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode, LLMConfig
 from crawl4ai.extraction_strategy import LLMExtractionStrategy
 from pydantic import BaseModel, Field
@@ -29,10 +31,57 @@ Eres un experto en analizar páginas web en español para una empresa que recopi
 - Ignora información irrelevante y enfócate solo en datos relacionados con convocatorias o programas.
 """
 
-# Step 3: Async runner
+# Step 3: Set up SQLite database
+def setup_database():
+    conn = sqlite3.connect("data.db")
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS convocatorias (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre_de_la_convocatoria TEXT,
+            fecha_de_apertura TEXT,
+            fecha_de_cierre TEXT,
+            idioma TEXT,
+            pais_que_convoca TEXT,
+            enlace_de_la_convocatoria TEXT,
+            tipo_de_proyecto_o_propuesta_que_se_puede_presentar TEXT,
+            quienes_pueden_participar TEXT,
+            beneficios TEXT
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+# Step 4: Save data to SQLite (updated for list)
+def save_to_database(data_list):
+    conn = sqlite3.connect("data.db")
+    cursor = conn.cursor()
+    for data in data_list:  # Loop through each item in the list
+        cursor.execute("""
+            INSERT INTO convocatorias (
+                nombre_de_la_convocatoria, fecha_de_apertura, fecha_de_cierre, idioma,
+                pais_que_convoca, enlace_de_la_convocatoria, tipo_de_proyecto_o_propuesta_que_se_puede_presentar,
+                quienes_pueden_participar, beneficios
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            data.get("nombre_de_la_convocatoria"),
+            data.get("fecha_de_apertura"),
+            data.get("fecha_de_cierre"),
+            data.get("idioma"),
+            data.get("pais_que_convoca"),
+            data.get("enlace_de_la_convocatoria"),
+            data.get("tipo_de_proyecto_o_propuesta_que_se_puede_presentar"),
+            data.get("quienes_pueden_participar"),
+            data.get("beneficios")
+        ))
+    conn.commit()
+    conn.close()
+
+# Step 5: Async runner (updated)
 async def main():
-    browser_config = BrowserConfig(verbose=True, headless=False)
+    setup_database()
     
+    browser_config = BrowserConfig(verbose=True, headless=False)
     run_config = CrawlerRunConfig(
         word_count_threshold=100,
         cache_mode=CacheMode.BYPASS,
@@ -59,7 +108,9 @@ async def main():
 
             if result.success:
                 print("✅ Extraction Success")
-                print(result.extracted_content)
+                extracted_data = json.loads(result.extracted_content)  # Parse JSON to list
+                save_to_database(extracted_data)  # Save the list
+                print("💾 Saved to database")
             else:
                 print("❌ Extraction Failed:", result.error_message)
 
